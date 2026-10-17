@@ -8,7 +8,8 @@
 // Использование:
 //   node switch.mjs                 интерактивный выбор
 //   node switch.mjs <имя>           переключить на существующий проект
-//   node switch.mjs --new [имя] [url]  создать проект (git clone) и переключить
+//   node switch.mjs --new [url]     создать проект (git clone) и переключить,
+//                                   имя проекта берётся из URL
 //   node switch.mjs --status        только показать текущий проект и список
 
 import { spawnSync } from 'node:child_process';
@@ -26,9 +27,14 @@ const HELP = `Переключатель проекта DevLab
 Использование:
   node switch.mjs                    интерактивный выбор проекта
   node switch.mjs <имя>              переключить на существующий проект
-  node switch.mjs --new [имя] [url]  создать проект через git clone и переключить
+  node switch.mjs --new [url] [имя]  создать проект через git clone и переключить
+                                     (имя берётся из URL, HTTPS -> SSH)
   node switch.mjs --status           показать текущий проект и список
-  node switch.mjs --help             эта справка`;
+  node switch.mjs --help             эта справка
+
+Флаги:
+  --https   не переключать https-URL на SSH (по умолчанию https заменяется на
+            git@host:path, т.к. в контейнере настроены SSH-ключи)`;
 
 // Запуск docker без вывода на терминал — для служебных команд (ls, ps).
 function docker(args) {
@@ -87,31 +93,90 @@ function listProjects() {
 }
 
 // Имя проекта не должно ломать путь внутри volume.
+const NAME_RE = /^[\w][\w.-]*$/;
+
 function validateName(name) {
-  if (!/^[\w][\w.-]*$/.test(name)) {
+  if (!NAME_RE.test(name)) {
     fail(`некорректное имя проекта "${name}" — допустимы буквы, цифры, "-", "_", "."`);
   }
   return name;
 }
 
+// Похожа ли строка на git URL (а не на имя проекта).
+function isUrlLike(value) {
+  return !!value && /^(?:https?:\/\/|ssh:\/\/|git(?:\+ssh)?:\/\/|\w+@[\w.-]+:)/i.test(value);
+}
+
+// Имя проекта из git URL: последний сегмент пути без .git.
+// https://host/owner/repo.git, git@host:owner/repo.git, ssh://git@host:22/owner/repo -> repo
+function nameFromUrl(rawUrl) {
+  const cleaned = rawUrl.trim().replace(/[/?#]+$/, '').replace(/\.git$/i, '');
+  const parts = cleaned.split(/[/:]/).filter(Boolean);
+  const name = parts[parts.length - 1] ?? '';
+  return NAME_RE.test(name) ? name : null;
+}
+
+// HTTPS -> SSH: в контейнере лежат SSH-ключи, логин/пароль для clone не нужны.
+// Уже ssh/scp-like/git:// URL остаются как есть.
+function toSshUrl(rawUrl) {
+  const match = rawUrl.trim().match(/^https?:\/\/(?:[^@/]+@)?([^/]+)\/(.+)$/i);
+  if (!match) return rawUrl.trim();
+  const [, host, repoPath] = match;
+  const path = repoPath.replace(/\/+$/, '');
+  return `git@${host}:${path}${/\.git$/i.test(path) ? '' : '.git'}`;
+}
+
 // git clone внутрь volume: путь обязательно относительно /projects.
-async function createProject(name, url) {
-  const rl = readline.createInterface({ input: stdin, output: stdout });
-  try {
-    if (!name) name = (await rl.question('Имя нового проекта: ')).trim();
-    if (!url) url = (await rl.question('Git URL (ssh или https): ')).trim();
-    if (!name || !url) fail('имя проекта и git URL обязательны');
-  } finally {
-    rl.close();
+async function createProject({ name, url, projects, useSsh = true }) {
+  if (!url) {
+    const rl = readline.createInterface({ input: stdin, output: stdout });
+    try {
+      url = (await rl.question('Git URL (ssh или https): ')).trim();
+    } finally {
+      rl.close();
+    }
   }
+  if (!url) fail('git URL обязателен');
+  if (!isUrlLike(url)) fail(`"${url}" не похоже на git URL`);
+
+  const cloneUrl = useSsh ? toSshUrl(url) : url.trim();
+  if (cloneUrl !== url.trim()) console.log(`HTTPS -> SSH: ${cloneUrl}`);
+  if (!name) name = nameFromUrl(cloneUrl);
+  if (!name) {
+    const rl = readline.createInterface({ input: stdin, output: stdout });
+    try {
+      name = (await rl.question('Имя нового проекта: ')).trim();
+    } finally {
+      rl.close();
+    }
+  }
+  if (!name) fail('не удалось определить имя проекта из URL');
   validateName(name);
 
-  console.log(`Клонирую ${url} -> projects/${name}`);
+  // Каталог уже есть — клонировать нельзя, только переключиться.
+  if (projects.includes(name)) {
+    console.log(`Проект "${name}" уже есть в volume — переключаю без клонирования.`);
+    console.log(`  Пересоздать: docker compose run --rm admin rm -rf projects/${name}`);
+    return name;
+  }
+
+  console.log(`Клонирую ${cloneUrl} -> projects/${name}`);
+  // Пустой credential.helper отключает helper'ы VS Code (их путь к vscode-server
+  // устаревает после обновления редактора и git падает вместо работы).
+  const git = ['git'];
+  if (!useSsh) git.push('-c', 'credential.helper=');
   const status = dockerInherit([
     'compose', 'run', '--rm', 'admin',
-    'git', 'clone', url, `projects/${name}`,
+    ...git, 'clone', cloneUrl, `projects/${name}`,
   ]);
-  if (status !== 0) fail(`git clone завершился с кодом ${status}`);
+  if (status !== 0) {
+    console.error(`git clone завершился с кодом ${status}`);
+    if (useSsh) {
+      console.error('Проверьте доступ по SSH: docker compose exec dev ssh -T git@<хост>');
+      console.error('Клонировать по HTTPS (с логином): повторите с флагом --https');
+    }
+    process.exit(1);
+  }
   return name;
 }
 
@@ -160,24 +225,40 @@ function apply() {
 }
 
 async function main() {
-  const [arg1, arg2, arg3] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
 
-  if (arg1 === '--help' || arg1 === '-h') {
+  // '--new' — режим, а не флаг: остаётся в позиционных аргументах.
+  const flags = new Set();
+  const args = [];
+  for (const arg of argv) {
+    if (arg === '--new' || !arg.startsWith('-')) args.push(arg);
+    else flags.add(arg);
+  }
+
+  if (flags.has('--help') || flags.has('-h')) {
     console.log(HELP);
     return;
   }
+  const unknown = [...flags].filter((flag) => flag !== '--https' && flag !== '--status');
+  if (unknown.length) fail(`неизвестные флаги: ${unknown.join(', ')}\n\n${HELP}`);
+
+  const useSsh = !flags.has('--https');
+  const [arg1, arg2, arg3] = args;
 
   const current = readProject();
   const projects = listProjects();
 
-  if (arg1 === '--status') {
+  if (flags.has('--status')) {
     showStatus(projects, current);
     return;
   }
 
   let target;
   if (arg1 === '--new') {
-    target = createProject(arg2, arg3);
+    // Имя проекта берётся из URL; отдельным аргументом можно переопределить.
+    const url = [arg2, arg3].find(isUrlLike);
+    const name = [arg2, arg3].find((arg) => !isUrlLike(arg));
+    target = await createProject({ name, url, projects, useSsh });
   } else if (arg1) {
     validateName(arg1);
     if (!projects.includes(arg1)) {
@@ -186,7 +267,7 @@ async function main() {
     target = arg1;
   } else {
     const choice = await choose(projects, current);
-    target = choice.create ? await createProject() : choice.name;
+    target = choice.create ? await createProject({ projects, useSsh }) : choice.name;
   }
 
   if (target === current) {
