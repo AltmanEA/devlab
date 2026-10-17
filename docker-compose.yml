@@ -1,0 +1,62 @@
+services:
+  # Инициализация тома: создаёт структуру каталогов и права
+  # Запускать перед первым `up` и после создания нового тома
+  # docker compose run --rm setup
+  setup:
+    build: .
+    profiles: ["setup"]
+    user: "0:0"
+    volumes:
+      - dev-projects:/projects
+    working_dir: /projects
+    command: bash -c "mkdir -p projects/${PROJECT} && chown -R 1000:1000 /projects"
+
+  # Основной контейнер для работы: видит только текущий проект
+  dev:
+    build: .
+    user: "1000:1000"
+    stdin_open: true
+    tty: true
+    environment:
+      PROJECT: ${PROJECT}
+      HOME: /home/node
+      # Глобальный git-конфиг живёт на хосте, а не в writable layer контейнера
+      GIT_CONFIG_GLOBAL: /home/git/.gitconfig
+    volumes:
+      # Внутрь монтируется только подпапка текущего проекта
+      - type: volume
+        source: dev-projects
+        target: /workspace
+        volume:
+          subpath: projects/${PROJECT}
+      # Домашний каталог — служебные данные: кэш npm, vscode-server, кэши инструментов
+      # Переживают пересоздание контейнера (смена PROJECT, пересборка образа)
+      - dev-home:/home/node
+      # Git: конфиг и хранилище учётных данных (переживают пересоздание контейнера)
+      - ./git:/home/git
+    working_dir: /workspace
+    entrypoint: ["/home/git/.ssh-init.sh"]
+    command: bash
+
+  # Служебный контейнер: видит ВСЕ проекты (для git clone, удаления и т.п.)
+  # Запускается только явно: docker compose run --rm admin
+  # Работает от uid 1000 (node), чтобы файлы создавались с правильными правами
+  admin:
+    build: .
+    profiles: ["admin"]
+    user: "1000:1000"
+    stdin_open: true
+    tty: true
+    environment:
+      HOME: /home/node
+      GIT_CONFIG_GLOBAL: /home/git/.gitconfig
+    volumes:
+      - dev-projects:/projects
+      - ./git:/home/git
+    working_dir: /projects
+    entrypoint: ["/home/git/.ssh-init.sh"]
+    command: bash
+
+volumes:
+  dev-projects:
+  dev-home:

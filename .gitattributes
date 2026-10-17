@@ -1,0 +1,9 @@
+# Контейнер работает в Linux: скрипты должны оставаться с LF
+# даже при клонировании репозитория на Windows (core.autocrlf=true).
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+.gitignore text eol=lf
+
+# Windows batch требует CRLF
+switch.cmd text eol=crlf

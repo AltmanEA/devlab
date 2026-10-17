@@ -1,0 +1,18 @@
+# Шаблон глобального git-конфига для контейнера DevLab.
+# Скопируйте в git/.gitconfig и подставьте свои данные:
+#   cp git/.gitconfig.example git/.gitconfig
+#
+# Файл git/.gitconfig монтируется в контейнер как $GIT_CONFIG_GLOBAL
+# и не попадает в репозиторий.
+
+[user]
+	name = Your Name
+	email = you@example.com
+[core]
+	editor = code --wait
+[init]
+	defaultBranch = main
+
+# При работе через VS Code Remote-Containers редактор может добавить сюда
+# секцию [credential] с временным helper'ом (путь к vscode-server меняется
+# при каждом обновлении VS Code). Не коммитьте её в этот шаблон.
