@@ -93,7 +93,7 @@ docker compose exec dev git pull origin HEAD
 текущего проекта. Создайте их из шаблонов:
 
 ```bash
-cp .env.example .env                      # затем укажите PROJECT=<имя>
+cp .env.example .env                      # затем укажите PROJECT=<имя> и NEURALDEEP_API_KEY
 cp git/.gitconfig.example git/.gitconfig  # затем укажите name и email
 mkdir -p git/.ssh                         # затем положите сюда свои SSH-ключи
 ```

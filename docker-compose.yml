@@ -22,6 +22,8 @@ services:
       HOME: /home/node
       # Глобальный git-конфиг живёт на хосте, а не в writable layer контейнера
       GIT_CONFIG_GLOBAL: /home/git/.gitconfig
+      # API-ключ NeuralDeep для AI CLI (берётся из .env на хосте)
+      NEURALDEEP_API_KEY: ${NEURALDEEP_API_KEY}
     volumes:
       # Внутрь монтируется только подпапка текущего проекта
       - type: volume
@@ -50,6 +52,7 @@ services:
     environment:
       HOME: /home/node
       GIT_CONFIG_GLOBAL: /home/git/.gitconfig
+      NEURALDEEP_API_KEY: ${NEURALDEEP_API_KEY}
     volumes:
       - dev-projects:/projects
       - ./git:/home/git

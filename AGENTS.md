@@ -35,6 +35,18 @@ docker compose exec dev opencode
 Их настройки и credentials пишутся в `~` (`~/.kodacli`, `~/.config/koda`, `~/.local/share/opencode`) —
 это volume `dev-home`, они переживают пересоздание контейнера.
 
+## AI-провайдеры opencode
+
+В `~/.config/opencode/opencode.jsonc` настроены два провайдера:
+
+- **neuraldeep** (по умолчанию): `https://api.neuraldeep.ru/v1`, модели `qwen3.6-35b-a3b`
+  и `qwen3.6-35b-a3b-noreason`. Ключ берётся из переменной `NEURALDEEP_API_KEY`
+  (пробрасывается в контейнер из `.env` через docker-compose).
+- **ollama** (локально): `http://host.docker.internal:11434/v1` — Ollama на хосте,
+  модели `qwen-text`, `qwen-coder`.
+
+Смена модели: `/models` в TUI или `opencode run --model ollama/qwen-coder '...'`.
+
 ## Права пользователей
 
 Все сервисы (`dev`, `admin`, `setup`) работают от **uid 1000 (node)**.
