@@ -22,6 +22,19 @@ docker compose exec dev <cmd>         # выполнить команду в к�
   переживают пересоздание контейнера
 - `./git/` на хосте → bind-mount в `/home/git` → git-конфиг и SSH-ключи
 
+## AI CLI в образе
+
+`koda` (Koda CLI) и `opencode` (OpenCode) установлены глобально в образе (`/usr/local/bin`),
+поэтому доступны в `dev` и `admin` при любом PROJECT и любых подключенных томах:
+
+```bash
+docker compose exec dev koda
+docker compose exec dev opencode
+```
+
+Их настройки и credentials пишутся в `~` (`~/.kodacli`, `~/.config/koda`, `~/.local/share/opencode`) —
+это volume `dev-home`, они переживают пересоздание контейнера.
+
 ## Права пользователей
 
 Все сервисы (`dev`, `admin`, `setup`) работают от **uid 1000 (node)**.

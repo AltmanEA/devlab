@@ -199,3 +199,6 @@ docker compose up -d
 - Node.js 22
 - TypeScript, Vite, Vitest (глобально)
 - Python 3, make, g++ (для native модулей)
+- Koda CLI (`@kodadev/koda-cli`), OpenCode (`opencode-ai`) — установлены в образ
+  (`/usr/local/bin`), доступны во всех сервисах при любом PROJECT и любых томах;
+  настройки и credentials пишутся в `~` (volume `dev-home`) и переживают пересоздание контейнера
